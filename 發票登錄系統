@@ -1,0 +1,156 @@
+#include <stdio.h>      // 標準輸入輸出（printf, scanf）
+#include <string.h>     // 字串處理（strcmp）
+#include <stdlib.h>     // system(), rand(), srand()
+#include <time.h>       // time()，用於隨機抽獎的亂數種子
+
+// 定義發票的結構，將一張發票需要的資料整合在一起
+struct Invoice{
+    int num;            // 發票號碼（8位數）
+    int m;              // 金額
+    int d;              // 日期（格式：YYYYMMDD）
+    char name[100];     // 姓名
+};
+
+int main() {
+
+    struct Invoice invoices[100]; // 儲存最多 100 張發票
+    struct Invoice temp;          // 排序時用來交換資料的暫存結構
+
+    int b = 0;        // 目前已輸入的發票數量
+    char ADMIN_PASSWORD[10] = "admin123"; // 管理員密碼
+
+    int a;            // 使用者選單選項
+    int i, j, min;    // 迴圈與排序用變數
+    int n, c, d, m;   // 抽獎與輔助變數
+    char key[10];     // 查詢姓名或輸入密碼用的字串
+
+    // 主選單迴圈，讓程式可以重複執行直到使用者選擇離開
+    while(1){
+        system("cls"); // 清除畫面
+
+        // 顯示主選單
+        printf("---發票抽獎登入系統---\n");
+        printf("1.登入發票\n");
+        printf("2.顯示所有發票\n");
+        printf("3.查詢發票\n");
+        printf("4.(需管理員密碼)開始抽獎\n");
+        printf("5.離開\n");
+        printf("請選擇:");
+        scanf("%d", &a);
+
+        // 功能 1：輸入發票資料
+        if (a == 1){
+            system("cls");
+
+            printf("請輸入發票號碼 (8位數):");
+            scanf("%d", &invoices[b].num);
+
+            printf("請輸入金額:");
+            scanf("%d", &invoices[b].m);
+
+            printf("請輸入日期 (格式: YYYYMMDD):");
+            scanf("%d", &invoices[b].d);
+
+            printf("請輸入姓名:");
+            scanf("%s", invoices[b].name);
+
+            b++; // 發票數量加 1
+            printf("目前共有 %d 張發票\n", b);
+
+            system("pause");
+        }
+
+        // 功能 2：顯示所有發票（依日期排序）
+        else if (a == 2){
+            system("cls");
+            printf("所有發票清單（按日期排序）:\n");
+
+            // 使用選擇排序法依日期排序
+            for(i = 0; i < b-1; i++){
+                min = i;
+                for(j = i; j < b; j++){
+                    if (invoices[j].d < invoices[min].d){
+                        min = j;
+                    }
+                }
+                // 交換資料
+                temp = invoices[i];
+                invoices[i] = invoices[min];
+                invoices[min] = temp;
+            }
+
+            // 顯示排序後的所有發票
+            for (i = 0; i < b; i++){
+                printf("發票號碼: %d, 金額: %d, 日期: %d, 姓名: %s\n",invoices[i].num,invoices[i].m,invoices[i].d,invoices[i].name);
+            }
+            system("pause");
+        }
+
+        // 功能 3：依姓名查詢發票
+        else if(a == 3){
+            system("cls");
+            printf("請輸入姓名:\n");
+            scanf("%s", key);
+
+            // 使用 strcmp 比對字串
+            for(i = 0; i < b; i++){
+                if(strcmp(key, invoices[i].name) == 0){
+                    printf("發票號碼: %d, 金額: %d, 日期: %d, 姓名: %s\n",invoices[i].num,invoices[i].m,invoices[i].d,invoices[i].name);
+                }
+            }
+            system("pause");
+        }
+
+        // 功能 4：抽獎（需管理員密碼）
+        else if(a == 4){
+            system("cls");
+            printf("請輸入管理員密碼:");
+            scanf("%s", key);
+
+            // 驗證密碼
+            if(strcmp(key, ADMIN_PASSWORD) == 0){
+                srand(time(NULL)); // 設定亂數種子
+
+                printf("請輸入中獎數量:");
+                scanf("%d", &n);
+
+                int a[n]; // 儲存中獎發票的索引
+                m = n;
+                i = 0;
+
+                // 產生不重複的亂數
+                while(m > 0){
+                    c = 0;
+                    a[i] = rand()%b;
+
+                    for(j = 0; j < i; j++){
+                        if(a[i] == a[j]){
+                            c++;
+                        }
+                    }
+
+                    if(c == 0){
+                        m--;
+                        i++;
+                    }
+                }
+
+                // 顯示中獎發票
+                for(j = 0; j < n; j++){
+                    d = a[j];
+                    printf("發票號碼: %d, 金額: %d, 日期: %d, 姓名: %s\n",invoices[d].num,invoices[d].m,invoices[d].d,invoices[d].name);
+                }
+            }
+            else{
+                printf("密碼錯誤！\n無法操作抽獎。\n");
+            }
+            system("pause");
+        }
+
+        // 功能 5：結束程式
+        else if(a == 5){
+            printf("結束程式\n");
+            return 0;
+        }
+    }
+}

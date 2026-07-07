@@ -1,0 +1,578 @@
+#include <LedControl.h>
+#include <Wire.h>
+#include <LiquidCrystal_I2C.h>
+#include <avr/pgmspace.h>
+
+
+#define NOTE_C4 262
+#define NOTE_D4 294
+#define NOTE_E4 330
+#define NOTE_F4 349
+#define NOTE_G4 392
+#define NOTE_A4 440
+#define NOTE_B4 494
+#define NOTE_C5 523
+#define NOTE_CS5 554
+
+
+#define NOTE_D5 587
+#define NOTE_DS5 622
+
+
+#define NOTE_E5 659
+
+
+#define NOTE_F5 698
+#define NOTE_FS5 740
+
+
+#define NOTE_G5 784
+#define NOTE_GS5 831
+
+
+#define NOTE_A5 880
+#define NOTE_AS5 932
+
+
+#define NOTE_B5 988
+
+
+#define NOTE_C6 1047
+
+
+// 初始化點矩陣：DIN=11, CLK=13, CS=10, 模組數=1
+LedControl lc = LedControl(11, 13, 10, 1);
+
+
+// 初始化 LCD
+LiquidCrystal_I2C lcd(0x27, 16, 2);
+
+
+const int buttonPins[4] = {2, 3, 4, 5};
+const int musicBuzzerPin = 12;
+const int sfxBuzzerPin = 8;
+bool notes[8][4] = {false};   // 8列4軌
+
+
+unsigned long lastMoveTime = 0;
+unsigned long moveInterval = 350; // 下落間隔
+
+
+enum GameState {
+  TITLE,
+  SONG_SELECT,
+  PLAYING,
+  RESULT
+};
+
+
+GameState gameState = TITLE;
+
+
+int score = 0;
+int combo = 0;      
+int maxCombo = 0;  
+bool lastBtnState[4] = {false}; // 上一幀按鍵狀態
+bool isHoldingNote[4] = {false}; // 長條用
+
+
+int goodCount = 0;
+bool brokenCombo = false;
+
+
+const int twinkleMelody[] PROGMEM = {
+  NOTE_C4, 0, NOTE_C4, 0, NOTE_G4, 0, NOTE_G4, 0,
+  NOTE_A4, 0, NOTE_A4, 0, NOTE_G4, 0, 0,       0,
+  NOTE_F4, 0, NOTE_F4, 0, NOTE_E4, 0, NOTE_E4, 0,
+  NOTE_D4, 0, NOTE_D4, 0, NOTE_C4, 0, 0,       0,
+};
+
+
+const int haruhikage[] PROGMEM = {
+  NOTE_E5, 0,0,0, NOTE_D5, 0, NOTE_C5,0,0, 0, NOTE_D5, 0,
+  NOTE_E5, 0,0, NOTE_F5,  NOTE_E5,0,NOTE_D5,0, 0, 0,0, 0,
+  NOTE_E5, 0,0,0, NOTE_D5, 0, NOTE_C5,0,0, 0, NOTE_D5, 0,
+  NOTE_E5, 0,0, NOTE_F5,  NOTE_E5,0,NOTE_D5,0, 0, 0,0, 0,
+  NOTE_E5, 0,0,0, NOTE_D5, 0, NOTE_C5,0,0, 0, NOTE_D5, 0,
+  NOTE_E5, 0,0, NOTE_F5,  NOTE_E5,0,NOTE_D5,0, 0, 0,0, 0,
+  NOTE_E5, 0,0,0, NOTE_D5, 0, NOTE_C5,0,0, 0, NOTE_D5, 0,
+ 
+  NOTE_E5, 0,0, NOTE_F5,  NOTE_E5,0,NOTE_D5,0, 0, 0,NOTE_G4,NOTE_G4 ,
+  NOTE_E5, 0,NOTE_E5,0, NOTE_D5,0, NOTE_F5, 0,NOTE_E5,0, NOTE_D5,0,
+  NOTE_D5, 0,NOTE_D5,0, NOTE_C5,NOTE_C5, NOTE_F5, 0,NOTE_E5,0, NOTE_D5,0,
+  NOTE_D5, 0,NOTE_C5,0, NOTE_C5,NOTE_D5, NOTE_E5, 0,0,0, 0,0,
+};
+
+
+// ==========================================
+// 譜面創作專區
+// ==========================================
+const byte songMap1[] PROGMEM = {
+  0b0001, 0b0000, 0b0001, 0b0000,
+  0b1000, 0b0000, 0b1000, 0b0000,
+  0b0100, 0b0000, 0b0100, 0b0000,
+  0b0010, 0b0000, 0b0000, 0b0000,
+  0b0010, 0b0000, 0b0010, 0b0000,
+  0b0100, 0b0000, 0b0100, 0b0000,
+  0b1000, 0b0000, 0b1000, 0b0000,
+  0b0001, 0b0000, 0b0000, 0b0000,
+};
+
+
+const byte songMap2[] PROGMEM = {
+  0b0000, 0b0000,0b1001, 0b0110, 0b0000, 0b0001,0b0010, 0b0100,0b1000, 0b0000,
+  0b0010, 0b0100,0b0010, 0b0100,0b0010,0b0000,0b0100,0b0001,0b0010, 0b0100,0b1000,
+  0b1000, 0b1000, 0b1000, 0b1000, 0b1000, 0b0000,
+  0b0001, 0b0010, 0b0100,0b0000, 0b1001, 0b0000,0b1000,0b0010,0b0100,0b1000,
+  0b0101, 0b0010, 0b0000,0b0101, 0b0000
+};
+
+
+const byte songMap3[] PROGMEM = {
+  0b1001, 0b0000, 0b0000, 0b0000, 0b0010, 0b0000, 0b0100, 0b0000, 0b0000, 0b0000, 0b1000, 0b0000,  
+  0b1000, 0b0000, 0b0000, 0b0010, 0b0100, 0b0000, 0b0001, 0b0000, 0b0000, 0b0000, 0b0000, 0b0000,
+  0b1001, 0b0000, 0b0000, 0b0000, 0b0100, 0b0000, 0b0100, 0b0000, 0b0000, 0b0000, 0b0010, 0b0000,
+  0b0001, 0b0000, 0b0000, 0b0100, 0b0010, 0b0000, 0b1000, 0b0000, 0b0000, 0b0000, 0b0000, 0b0000,
+  0b1001, 0b0000, 0b0000, 0b0000, 0b0100, 0b0000, 0b0010, 0b0010, 0b0010, 0b0010, 0b0010, 0b0000,
+  0b0100, 0b0100, 0b0100, 0b0010, 0b0100, 0b0000, 0b0001, 0b0001, 0b0001, 0b0001, 0b0001, 0b0001,
+  0b1000, 0b0000, 0b0000, 0b0000, 0b0010, 0b0000, 0b0100, 0b0100, 0b0100, 0b0100, 0b0010, 0b0000,
+  0b1000, 0b0000, 0b0010, 0b0000, 0b0100, 0b0000, 0b1001, 0b0000, 0b0010, 0b0000, 0b0100, 0b0000,///前奏
+  0b0001, 0b0000, 0b1000, 0b0000, 0b0100, 0b0100, 0b0100, 0b0100, 0b0100, 0b0000, 0b0010, 0b0000,
+  0b0100, 0b0000, 0b0010, 0b0000, 0b1000, 0b0000, 0b0001, 0b0001, 0b0001, 0b0001, 0b0001, 0b0000,
+  0b0100, 0b0100, 0b0100, 0b0100, 0b0001, 0b0010, 0b1000, 0b1000, 0b1000, 0b1000, 0b1000, 0b1000
+};
+
+
+const byte songMap4[] PROGMEM = {
+  0b0000, 0b0000,
+  0b0000, 0b0000, 0b1000, 0b0100, 0b0010, 0b0001, 0b0010, 0b0100, 0b1000, 0b0100, 0b0010, 0b0001,  
+  0b0010, 0b0100, 0b1000, 0b0000, 0b0000, 0b0000, 0b0100, 0b0000, 0b0010, 0b0000, 0b1000, 0b0000,
+  0b0001, 0b0000, 0b0000, 0b0100, 0b0100, 0b0000, 0b0010, 0b0010, 0b0000, 0b0000, 0b0000, 0b0000,
+  0b1000, 0b1000, 0b0100, 0b0100, 0b0010, 0b0010, 0b0001, 0b0001, 0b0010, 0b0010, 0b0100, 0b0100,
+  0b1000, 0b1000, 0b0000, 0b0000, 0b0001, 0b0001, 0b0010, 0b0010, 0b0100, 0b0100, 0b1000, 0b1000,
+  0b0100, 0b0100, 0b0010, 0b0010, 0b0001, 0b0001,
+};
+
+
+// 歌曲結構 (已升級加入 melodyLength)
+struct Song {
+  const byte* map;
+  int length;
+  const char* name;
+  unsigned long interval;
+  const int* melody;
+  int melodyLength;
+};
+
+
+Song songs[] = {
+  {songMap1, sizeof(songMap1), "twinkle", 260, twinkleMelody, sizeof(twinkleMelody) / sizeof(int)},        
+  {songMap2, sizeof(songMap2), "challenge", 200, NULL, 0},
+  {songMap3, sizeof(songMap3), "67", 170, haruhikage, sizeof(haruhikage) / sizeof(int)},
+  {songMap4, sizeof(songMap4), "Guanyee love", 210, NULL, 0}  
+};
+
+
+const int songCount = 4;
+int selectedSong = 0;
+int songIndex = 0;
+
+
+int perfectCount = 0;
+int missCount = 0;
+
+
+const byte BTN_UP    = 0;
+const byte BTN_DOWN  = 1;
+const byte BTN_START = 2;
+const byte BTN_BACK  = 3;
+
+
+// ==========================================
+// 基礎函式區
+// ==========================================
+void updateLCD() {
+  lcd.setCursor(0, 0);
+  lcd.print("SCORE: ");
+  lcd.print(score);
+  lcd.print("      ");
+  lcd.setCursor(0, 1);
+  lcd.print("COMBO: ");
+  lcd.print(combo);
+  lcd.print("      ");
+}
+
+
+void showTitle() {   // 標題
+  lcd.clear();
+  lcd.setCursor(0, 0);
+  lcd.print("   RHYTHM GAME   ");
+  lcd.setCursor(0, 1);
+  lcd.print("Press Any Button");
+}
+
+
+void showSongMenu() {    // 選單
+  lcd.clear();        
+  lcd.setCursor(0, 0);
+  lcd.print(">");
+  lcd.print(songs[selectedSong].name);
+  lcd.setCursor(0, 1);
+  lcd.print("D2:Start D3/4:<>");
+}
+
+
+void startGame() {
+  score = 0;
+  combo = 0;
+  maxCombo = 0;
+
+
+  perfectCount = 0;
+  goodCount = 0;
+  missCount = 0;
+
+
+  brokenCombo = false;
+  songIndex = 0; // 從第一拍
+
+
+  memset(notes, false, sizeof(notes)); // 清空音符
+  memset(lastBtnState, false, sizeof(lastBtnState));
+  memset(isHoldingNote, false, sizeof(isHoldingNote));
+
+
+  lastMoveTime = millis();
+
+
+  moveInterval = songs[selectedSong].interval;
+  gameState = PLAYING;
+
+
+  lcd.clear();
+  updateLCD();
+}
+
+
+// 結算畫面
+void showResult() {
+  lcd.clear();
+  lcd.setCursor(0, 0);
+  lcd.print("SCORE: ");
+  lcd.print(score);
+ 
+  lcd.setCursor(0, 1);
+ 
+  // All Perfect
+  if (!brokenCombo && maxCombo > 0 && goodCount == 0) {
+    lcd.print("MAX:");
+    lcd.print(maxCombo);
+    lcd.print("  *AP*");
+   
+    lc.setRow(0, 0, 0b01100110);
+    lc.setRow(0, 1, 0b10010101);
+    lc.setRow(0, 2, 0b10010101);
+    lc.setRow(0, 3, 0b11110110);
+    lc.setRow(0, 4, 0b10010100);
+    lc.setRow(0, 5, 0b10010100);
+    lc.setRow(0, 6, 0b10010100);
+    lc.setRow(0, 7, 0b00000000);
+  }
+  // Full Combo
+  else if (!brokenCombo && maxCombo > 0) {
+    lcd.print("MAX:");
+    lcd.print(maxCombo);
+    lcd.print("  *FC*");
+   
+    lc.setRow(0, 0, 0b01111011);
+    lc.setRow(0, 1, 0b01000100);
+    lc.setRow(0, 2, 0b01000100);
+    lc.setRow(0, 3, 0b01110100);
+    lc.setRow(0, 4, 0b01000100);
+    lc.setRow(0, 5, 0b01000100);
+    lc.setRow(0, 6, 0b01000011);
+    lc.setRow(0, 7, 0b00000000);
+  }
+  // 一般
+  else {
+    lcd.print("MaxCombo: ");
+    lcd.print(maxCombo);
+    lc.clearDisplay(0); // 清空點矩陣
+  }
+  delay(1000);
+}
+
+
+void renderDisplay() {  // 讀譜
+  lc.clearDisplay(0);
+  for (int row = 0; row < 8; row++) {
+    for (int lane = 0; lane < 4; lane++) {
+      if (notes[row][lane]) { // 有沒有音符
+        int mirroredLane = 3 - lane;   // 左右相反
+        lc.setLed(0, row, mirroredLane * 2, true);     // 顯示音符
+        lc.setLed(0, row, mirroredLane * 2 + 1, true);
+      }
+    }
+  }
+}
+
+
+void setup() {
+  noTone(musicBuzzerPin);
+  noTone(sfxBuzzerPin);
+ 
+  Serial.begin(9600);
+  lc.shutdown(0, false);
+  lc.setIntensity(0, 5);
+  lc.clearDisplay(0);
+ 
+  for (int i = 0; i < 4; i++) {
+    pinMode(buttonPins[i], INPUT_PULLUP);
+  }
+ 
+  pinMode(sfxBuzzerPin, OUTPUT);
+  lcd.init();
+  lcd.backlight();
+  showTitle();    
+}
+
+
+void loop() {
+  unsigned long currentTime = millis();
+
+
+  if (gameState == TITLE) {
+    for (int i = 0; i < 4; i++) {
+      if (digitalRead(buttonPins[i]) == LOW) {
+        tone(sfxBuzzerPin, 523, 100);
+        delay(200);
+        gameState = SONG_SELECT;
+        showSongMenu();
+        break;
+      }
+    }
+    return;
+  }
+
+
+  if (gameState == SONG_SELECT) {  // 選歌
+    if (digitalRead(buttonPins[BTN_UP]) == LOW) {  // 左
+      selectedSong--;
+      if (selectedSong < 0) {
+        selectedSong = songCount - 1;
+      }  
+      tone(sfxBuzzerPin, 659, 60);
+      showSongMenu();
+      delay(250);
+    }
+    else if (digitalRead(buttonPins[BTN_DOWN]) == LOW) {  // 右
+      selectedSong++;
+      if (selectedSong >= songCount){
+        selectedSong = 0;
+      }
+      tone(sfxBuzzerPin, 523, 60);
+      showSongMenu();
+      delay(250);
+    }
+    else if (digitalRead(buttonPins[BTN_START]) == LOW) {  // 確定
+      tone(sfxBuzzerPin, 1047, 200);
+      startGame();
+      delay(250);
+    }
+    return;
+  }
+
+
+  if (gameState == RESULT) {     // 結算畫面
+    for (int i = 0; i < 4; i++) {
+      bool currentBtnState = (digitalRead(buttonPins[i]) == LOW);
+     
+      if (currentBtnState && !lastBtnState[i]) {   // 按下且剛剛沒按
+        for (int j = 0; j < 4; j++){
+          lastBtnState[j] = false;
+        }
+        tone(sfxBuzzerPin, 440, 100);
+        gameState = SONG_SELECT;
+        showSongMenu();
+        delay(250);
+        break;
+      }
+      lastBtnState[i] = currentBtnState;
+    }
+    return;
+  }
+
+
+  if (gameState == PLAYING) {
+   
+    // 按譜面定時下落 ======
+    if (currentTime - lastMoveTime >= moveInterval) { // 到指定秒數時間
+      lastMoveTime = currentTime;
+
+
+      // Miss 判定
+      bool missed = false;
+      for (int lane = 0; lane < 4; lane++) {
+        if (notes[7][lane]) {          // 若落下後沒按
+          missed = true;
+          isHoldingNote[lane] = false;
+        }
+      }
+      if (missed) {
+        combo = 0;
+        missCount++;
+        brokenCombo = true;
+        updateLCD();
+      }
+
+
+      // 音符下移
+      for (int row = 7; row > 0; row--) {
+        for (int lane = 0; lane < 4; lane++) {
+          notes[row][lane] = notes[row - 1][lane];
+        }
+      }
+
+
+      int currentSongLength = songs[selectedSong].length;  // 歌曲長度
+
+
+      // 【新邏輯 1】背景音樂延遲 7 拍播放 (已修正 melodyLength 安全邊界判斷)
+      if (songs[selectedSong].melody != NULL) {
+        int melodyIndex = songIndex - 7; // 音樂進度比畫面晚 7 拍
+        if (melodyIndex >= 0 && melodyIndex < songs[selectedSong].melodyLength) {
+          int note = pgm_read_word(songs[selectedSong].melody + melodyIndex);
+          if (note > 0) {
+            tone(musicBuzzerPin, note, moveInterval - 20);
+          } else {
+            noTone(musicBuzzerPin);
+          }
+        } else {
+          noTone(musicBuzzerPin);
+        }
+      }
+
+
+      // 【新邏輯 2】譜面生成限制
+      if (songIndex < currentSongLength) {  // 歌曲未結束，正常生成頂部音符
+        byte currentBeat = pgm_read_byte(songs[selectedSong].map + songIndex);
+        notes[0][0] = (currentBeat & 0b0001);     // 雙壓
+        notes[0][1] = (currentBeat & 0b0010);
+        notes[0][2] = (currentBeat & 0b0100);
+        notes[0][3] = (currentBeat & 0b1000);
+      }
+      else {  // 譜面讀完後，頂部不再產生新音符
+        for (int lane = 0; lane < 4; lane++){
+          notes[0][lane] = false;
+        }
+      }
+     
+      // 每拍正常遞增，讓後面延遲的音樂能播完
+      songIndex++;
+
+
+      // 【新邏輯 3】判斷結算畫面（必須是譜面生成完、音樂延遲播完、且點矩陣音符全部清空）
+      if (songIndex >= (currentSongLength + 7)) {
+        bool screenClear = true;
+        for (int row = 0; row < 8; row++) {
+          for (int lane = 0; lane < 4; lane++) {
+            if (notes[row][lane]){  // 檢查還有沒有剩音符
+               screenClear = false;
+            }  
+          }
+        }
+        if (screenClear) {  
+          gameState = RESULT;
+          showResult(); // 進結算畫面  
+          return;
+        }
+      }
+      renderDisplay();
+    }
+
+
+    // 按鍵判定
+    for (int lane = 0; lane < 4; lane++) {
+      bool currentBtnState = (digitalRead(buttonPins[lane]) == LOW);
+
+
+      // 剛按下的瞬間
+      if (currentBtnState && !lastBtnState[lane]) {
+        if (notes[6][lane]) { // Perfect
+          notes[6][lane] = false;
+          score += 100;
+          combo++;
+          perfectCount++;
+          isHoldingNote[lane] = true;
+          tone(sfxBuzzerPin, 1319, 40);
+          if (combo > maxCombo){   // 更新最大combo數
+            maxCombo = combo;
+          }    
+          updateLCD();
+          renderDisplay();
+        }
+        else if (notes[5][lane]) { // Good (Fast)
+          notes[5][lane] = false;
+          score += 50;
+          combo++;    
+          goodCount++;                
+          isHoldingNote[lane] = true;
+          tone(sfxBuzzerPin, 988, 40);  
+          if (combo > maxCombo){
+            maxCombo = combo;
+          }
+          updateLCD();
+          renderDisplay();
+        }
+        else if (notes[7][lane]) { // Good (Late)
+          notes[7][lane] = false;
+          score += 50;
+          combo++;        
+          goodCount++;              
+          isHoldingNote[lane] = false;
+          tone(sfxBuzzerPin, 988, 40);  
+          if (combo > maxCombo){
+            maxCombo = combo;
+          }
+          updateLCD();
+          renderDisplay();
+        }
+        else { // 空打 (已修正 missCount 重複累加問題)
+          combo = 0;
+          missCount++;
+          brokenCombo = true;
+          tone(sfxBuzzerPin, 180, 120);
+          updateLCD();
+        }
+      }
+     
+      // 持續壓著的狀態
+      else if (currentBtnState && lastBtnState[lane]) {
+        if (isHoldingNote[lane] && notes[6][lane]) {  
+          notes[6][lane] = false;
+          score += 50;  
+          combo++;
+
+
+          tone(sfxBuzzerPin, 1319, 30);
+          if (combo > maxCombo){
+            maxCombo = combo;
+          }
+          updateLCD();
+          renderDisplay();
+        }
+      }
+
+
+      // 放開按鍵的瞬間
+      if (!currentBtnState && lastBtnState[lane]) {
+        isHoldingNote[lane] = false;
+      }
+
+
+      lastBtnState[lane] = currentBtnState;
+    }
+  }
+}
+
+

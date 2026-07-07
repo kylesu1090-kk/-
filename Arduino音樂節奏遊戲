@@ -154,7 +154,7 @@ const byte songMap4[] PROGMEM = {
 };
 
 
-// 歌曲結構 (已升級加入 melodyLength)
+// 歌曲結構 
 struct Song {
   const byte* map;
   int length;
@@ -437,7 +437,7 @@ void loop() {
       int currentSongLength = songs[selectedSong].length;  // 歌曲長度
 
 
-      // 【新邏輯 1】背景音樂延遲 7 拍播放 (已修正 melodyLength 安全邊界判斷)
+      // 背景音樂延遲 7 拍播放 
       if (songs[selectedSong].melody != NULL) {
         int melodyIndex = songIndex - 7; // 音樂進度比畫面晚 7 拍
         if (melodyIndex >= 0 && melodyIndex < songs[selectedSong].melodyLength) {
@@ -453,7 +453,7 @@ void loop() {
       }
 
 
-      // 【新邏輯 2】譜面生成限制
+      // 譜面生成限制
       if (songIndex < currentSongLength) {  // 歌曲未結束，正常生成頂部音符
         byte currentBeat = pgm_read_byte(songs[selectedSong].map + songIndex);
         notes[0][0] = (currentBeat & 0b0001);     // 雙壓
@@ -471,7 +471,7 @@ void loop() {
       songIndex++;
 
 
-      // 【新邏輯 3】判斷結算畫面（必須是譜面生成完、音樂延遲播完、且點矩陣音符全部清空）
+      // 判斷結算畫面
       if (songIndex >= (currentSongLength + 7)) {
         bool screenClear = true;
         for (int row = 0; row < 8; row++) {
@@ -537,7 +537,7 @@ void loop() {
           updateLCD();
           renderDisplay();
         }
-        else { // 空打 (已修正 missCount 重複累加問題)
+        else { // 空打 
           combo = 0;
           missCount++;
           brokenCombo = true;
